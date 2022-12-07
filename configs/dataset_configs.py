@@ -29,7 +29,8 @@ COCO_TRAIN_TFRECORD_PATTERN = 'gs://pix2seq/multi_task/data/coco/tfrecord/train*
 COCO_VAL_TFRECORD_PATTERN = 'gs://pix2seq/multi_task/data/coco/tfrecord/val*'
 
 # Download from gs://pix2seq/multi_task/data/coco/json
-COCO_ANNOTATIONS_DIR = '/tmp/coco_annotations'
+# COCO_ANNOTATIONS_DIR = '/tmp/coco_annotations'
+COCO_ANNOTATIONS_DIR='/data/sung/dataset/coco/annotations/'
 
 _shared_coco_dataset_config = D(
     train_file_pattern=COCO_TRAIN_TFRECORD_PATTERN,
@@ -51,6 +52,16 @@ dataset_configs = {
     'coco/2017_object_detection':
         D(
             name='coco/2017_object_detection',
+            train_filename_for_metrics='instances_train2017.json',
+            val_filename_for_metrics='instances_val2017.json',
+            category_names_path=os.path.join(
+                _shared_coco_dataset_config['coco_annotations_dir_for_metrics'],
+                'instances_val2017.json'),
+            **_shared_coco_dataset_config
+        ),
+    'coco/2017_object_classification':
+        D(
+            name='coco/2017_object_classification',
             train_filename_for_metrics='instances_train2017.json',
             val_filename_for_metrics='instances_val2017.json',
             category_names_path=os.path.join(

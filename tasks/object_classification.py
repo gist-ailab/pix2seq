@@ -33,8 +33,18 @@ from tasks.visualization import vis_utils
 import tensorflow as tf
 
 
-@task_lib.TaskRegistry.register('object_detection')
-class TaskObjectDetection(task_lib.Task):
+def unique_func(tensors):
+  shape_ = tensors.shape
+  max_len = tf.shape(tensors)[-1]
+  y, idx = tf.unique(tensors) #, dtype=tf.int32)
+  y_len = tf.shape(y)[-1]
+    
+  paddings = tf.zeros((max_len - y_len), dtype=tensors.dtype)
+  return tf.reshape(tf.concat([y, paddings], axis=0), shape_)
+
+  
+@task_lib.TaskRegistry.register('object_classification')
+class TaskObjectClassification(task_lib.Task):
   """Object detection task with coco metric evaluation."""
 
   def __init__(self,
@@ -112,6 +122,7 @@ class TaskObjectDetection(task_lib.Task):
                           num_parallel_calls=tf.data.experimental.AUTOTUNE)
     return dataset
 
+
   def preprocess_batched(self, batched_examples, training):
     """Task-specific preprocessing of batched examples on accelerators (TPUs).
 
@@ -135,13 +146,30 @@ class TaskObjectDetection(task_lib.Task):
     features, labels = batched_examples
 
     # Create input/target seq.
-    ret = build_response_seq_from_bbox(
-        labels['bbox'], labels['label'], config.quantization_bins,
-        config.noise_bbox_weight, mconfig.coord_vocab_shift,
-        class_label_corruption=config.class_label_corruption)
+    if training:
+      # task = np.random.choice(['det', 'cls'], 1)[0]
+      task = 'cls'
+    else:
+      task = 'det'
+    
+    if task == 'det':
+      ret = build_response_seq_from_bbox(
+          labels['bbox'], labels['label'], config.quantization_bins,
+          config.noise_bbox_weight, mconfig.coord_vocab_shift,
+          class_label_corruption=config.class_label_corruption)
+    else:
+      label_unique = tf.map_fn(unique_func, elems=labels['label'])
+      ret = build_response_seq_from_label(label_unique, mconfig.coord_vocab_shift, class_label_corruption=config.class_label_corruption)
+      
     response_seq, response_seq_cm, token_weights = ret
-    prompt_seq = task_utils.build_prompt_seq_from_task_id(
-        self.task_vocab_id, response_seq)  # (bsz, 1)
+    
+    if task == 'det':
+      prompt_seq = task_utils.build_prompt_seq_from_task_id(
+          self.task_vocab_id, response_seq)  # (bsz, 1)
+    else:
+      prompt_seq = task_utils.build_prompt_seq_from_task_id(
+          (self.task_vocab_id + 1), response_seq)  # (bsz, 1)
+      
     input_seq = tf.concat([prompt_seq, response_seq_cm], -1)
     target_seq = tf.concat([prompt_seq, response_seq], -1)
 
@@ -448,6 +476,67 @@ def build_response_seq_from_bbox(bbox,
   token_weights = tf.concat([bbox_weight, label_weight], -1)
   token_weights = utils.flatten_non_batch_dims(token_weights, 2)
 
+  return response_seq, response_seq_class_m, token_weights
+
+
+
+def build_response_seq_from_label(label,
+                                 coord_vocab_shift,
+                                 class_label_corruption='rand_cls'):
+  """"Build target seq from bounding bboxes for object detection.
+
+  Objects are serialized using the format of yxyxc.
+
+  Args:
+    label: `int` label of shape (bsz, n).
+    coord_vocab_shift: `int`, shifting coordinates by a specified integer.
+    class_label_corruption: `string` specifying how labels are corrupted for the input_seq.
+
+  Returns:
+    discrete sequences with shape (bsz, seqlen).
+  """
+  # Bbox and label quantization.
+  is_padding = tf.expand_dims(tf.equal(label, 0), -1)
+  new_label = tf.expand_dims(label + vocab.BASE_VOCAB_SHIFT, -1)
+  new_label = tf.where(is_padding, tf.zeros_like(new_label), new_label)
+  lb_shape = tf.shape(new_label)
+
+  # Bbox and label serialization.
+  # response_seq = tf.concat([quantized_bbox, new_label], axis=-1)
+  response_seq = new_label
+  response_seq = utils.flatten_non_batch_dims(response_seq, 2)
+  
+  rand_cls = vocab.BASE_VOCAB_SHIFT + tf.random.uniform(
+      lb_shape,
+      0,
+      coord_vocab_shift - vocab.BASE_VOCAB_SHIFT,
+      dtype=new_label.dtype)
+  fake_cls = vocab.FAKE_CLASS_TOKEN + tf.zeros_like(new_label)
+  rand_n_fake_cls = tf.where(
+      tf.random.uniform(lb_shape) > 0.5, rand_cls, fake_cls)
+  real_n_fake_cls = tf.where(
+      tf.random.uniform(lb_shape) > 0.5, new_label, fake_cls)
+  real_n_rand_n_fake_cls = tf.where(
+      tf.random.uniform(lb_shape) > 0.5, new_label, rand_n_fake_cls)
+  label_mapping = {'none': new_label,
+                   'rand_cls': rand_cls,
+                   'real_n_fake_cls': real_n_fake_cls,
+                   'rand_n_fake_cls': rand_n_fake_cls,
+                   'real_n_rand_n_fake_cls': real_n_rand_n_fake_cls}
+  new_label_m = label_mapping[class_label_corruption]
+  new_label_m = tf.where(is_padding, tf.zeros_like(new_label_m), new_label_m)
+  # response_seq_class_m = tf.concat([quantized_bbox, new_label_m], axis=-1)
+  response_seq_class_m = new_label_m
+  response_seq_class_m = utils.flatten_non_batch_dims(response_seq_class_m, 2)
+
+  # Get token weights.
+  is_real = tf.cast(tf.not_equal(new_label, vocab.FAKE_CLASS_TOKEN), tf.float32)
+  # bbox_weight = tf.tile(is_real, [1, 1, 4])
+  # label_weight = is_real + (1. - is_real) * noise_bbox_weight
+  label_weight = is_real
+  # token_weights = tf.concat([bbox_weight, label_weight], -1)
+  token_weights = label_weight
+  token_weights = utils.flatten_non_batch_dims(token_weights, 2)
   return response_seq, response_seq_class_m, token_weights
 
 

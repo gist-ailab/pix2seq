@@ -123,8 +123,7 @@ class Dataset(abc.ABC):
       dataset = dataset.prefetch(tf.data.experimental.AUTOTUNE)
       return dataset
 
-    return tf.distribute.get_strategy().distribute_datasets_from_function(
-        input_fn)
+    return tf.distribute.get_strategy().distribute_datasets_from_function(input_fn)
 
   def _flatten_dims(self, features, labels):
     """Flatten first 2 dims when batch is independently duplicated."""

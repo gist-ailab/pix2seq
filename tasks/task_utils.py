@@ -168,6 +168,41 @@ def decode_object_seq_to_bbox(logits,
   return pred_class, pred_bbox, pred_score
 
 
+def decode_object_seq_to_cls(logits,
+                              pred_seq,
+                              coord_vocab_shift):
+  """Decode objects (label & bbox) for seq from `build_response_seq_from_bbox`.
+
+  Assume yxyxc format with truncation at the end for any uneven extra tokens.
+    Replace class tokens with argmax instead of sampling.
+
+  Args:
+    logits: `float` output logits in shape of (bsz, max_seq_len, vocab_size).
+    pred_seq: `int` pred sequence in shape of (bsz, max_seq_len).
+    quantization_bins: `int` for bins.
+    coord_vocab_shift: `int`, shifting coordinates by a specified integer.
+
+  Returns:
+    pred_class: `int` of shape (bsz, max_instances_per_image).
+    pred_bbox: `float` of shape (bsz, max_instances_per_image, 4).
+    pred_score: `float` of shape (bsz, max_instances_per_image).
+  """
+  _, seqlen, vocab_size = logits.shape
+  if seqlen % 5 != 0:  # truncate out the last few tokens.
+    pred_seq = pred_seq[..., :-(seqlen % 5)]
+    logits = logits[..., :-(seqlen % 5), :]
+  pred_class_p = tf.nn.softmax(logits)[:, 4::5]  # (bsz, instances, vocab_size)
+  mask_s1 = [0.] * vocab.BASE_VOCAB_SHIFT  # reserved.
+  mask_s2 = [1.] * (coord_vocab_shift - vocab.BASE_VOCAB_SHIFT)  # labels.
+  mask_s3 = [0] * (vocab_size - coord_vocab_shift)  # coordinates and others.
+  mask = tf.constant(mask_s1 + mask_s2 + mask_s3)
+  pred_class = tf.argmax(pred_class_p * mask[tf.newaxis, tf.newaxis, :], -1)
+  pred_score = tf.reduce_sum(
+      pred_class_p * tf.one_hot(pred_class, vocab_size), -1)
+  pred_class = tf.maximum(pred_class - vocab.BASE_VOCAB_SHIFT, 0)
+  pred_bbox = seq_to_bbox(pred_seq - coord_vocab_shift, quantization_bins)
+  return pred_class, pred_bbox, pred_score
+
 def seq_to_bbox(seq, quantization_bins, seq_format='yxyx_name'):
   """Returns [0, 1] normalized yxyx bbox from token sequence."""
   # [batch, 5*num_instances]

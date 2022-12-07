@@ -20,6 +20,7 @@ import io
 import itertools
 # copybara:insert import multiprocessing
 
+import multiprocessing
 from absl import logging
 import numpy as np
 from PIL import Image

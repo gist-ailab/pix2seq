@@ -29,7 +29,6 @@ from data import dataset as dataset_lib
 from data import decode_utils
 import tensorflow as tf
 
-
 def _xy_to_yx(tensor):
   """Convert a tensor in xy order into yx order.
 
@@ -85,15 +84,15 @@ class CocoObjectDetectionTFRecordDataset(dataset_lib.TFRecordDataset):
     bbox = decode_utils.decode_boxes(example)
     scale = 1. / utils.tf_float32(tf.shape(features['image'])[:2])
     bbox = utils.scale_points(bbox, scale)
-
+    
     labels = {
         'label': example['image/object/class/label'],
         'bbox': bbox,
         'area': decode_utils.decode_areas(example),
         'is_crowd': decode_utils.decode_is_crowd(example),
     }
-
     return features, labels
+
 
 
 @dataset_lib.DatasetRegistry.register('coco/2017_instance_segmentation')

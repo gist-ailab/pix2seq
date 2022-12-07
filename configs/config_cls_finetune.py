@@ -27,7 +27,7 @@ from configs.config_base import D
 def get_config(config_str=None):
   """config_str is either empty or contains task,architecture variants."""
 
-  task_variant = 'object_detection@coco/2017_object_detection'
+  task_variant = 'object_classification@coco/2017_object_detection'
   encoder_variant = 'vit-b'                 # Set model architecture.
   image_size = (640, 640)                   # Set image size.
 
@@ -37,11 +37,11 @@ def get_config(config_str=None):
 
 
   # Download from gs://pix2seq/multi_task/data/coco/json
-  coco_annotations_dir = '/tmp/coco_annotations'
+  # coco_annotations_dir = '/tmp/coco_annotations'
 
   task_config_map = {
-      'object_detection': D(
-          name='object_detection',
+      'object_classification': D(
+          name='object_classification',
           vocab_id=10,
           image_size=image_size,
           quantization_bins=1000,

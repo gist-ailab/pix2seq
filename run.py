@@ -37,10 +37,11 @@ from tasks import captioning
 from tasks import instance_segmentation
 from tasks import keypoint_detection
 from tasks import object_detection
+from tasks import object_classification
 # pylint: enable=unused-import
 from tasks import task as task_lib
 import tensorflow as tf
-
+# tf.config.run_functions_eagerly(True)
 
 TRAIN = 'train'
 EVAL = 'eval'
@@ -53,8 +54,6 @@ flags.DEFINE_bool('use_tpu', False,
                   'Whether to use tpu.')
 flags.DEFINE_string('master', None,
                     'Address/name of the TensorFlow master to use.')
-flags.DEFINE_bool('run_eagerly', False,
-                  'Whether to run eagerly (for interactive debugging).')
 flags.mark_flag_as_required('model_dir')
 
 config_flags.DEFINE_config_file(
@@ -167,6 +166,7 @@ def perform_training(config, datasets, tasks, train_steps, steps_per_loop,
     global_step = trainer.optimizer.iterations
     cur_step = global_step.numpy()
     timestamp = time.time()
+    
     while cur_step < train_steps:
       with summary_writer.as_default():
         train_multiple_steps(data_iterators, tasks)
@@ -199,8 +199,6 @@ def perform_training(config, datasets, tasks, train_steps, steps_per_loop,
 
 
 def main(unused_argv):
-  if FLAGS.run_eagerly:
-    tf.config.run_functions_eagerly(True)
   strategy = utils.build_strategy(FLAGS.use_tpu, FLAGS.master)
 
 

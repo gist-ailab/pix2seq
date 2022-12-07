@@ -98,6 +98,7 @@ class Trainer(abc.ABC):
     task_loss_metrics = {}
     loss = 0
     grads = []
+    
     for i, (o, task) in enumerate(zip(preprocessed_outputs, tasks)):
       with tf.GradientTape() as tape:
         loss_t = self.compute_loss(o)
@@ -109,6 +110,7 @@ class Trainer(abc.ABC):
             trainable_variables)
         grads = grads_t if i == 0 else [
             g + gt for g, gt in zip(grads, grads_t)]
+        
     self._optimizer.apply_gradients(zip(grads, trainable_variables))
 
     # Update metrics.
